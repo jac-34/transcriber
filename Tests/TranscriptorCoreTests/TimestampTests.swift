@@ -9,6 +9,12 @@ import Testing
         #expect(Timestamp.bracket(3723) == "[01:02:03]")
     }
 
+    @Test func nonFiniteSecondsBecomeZero() {
+        #expect(Timestamp.bracket(.nan) == "[00:00:00]")
+        #expect(Timestamp.bracket(.infinity) == "[00:00:00]")
+        #expect(Timestamp.duration(-.infinity) == "00:00")
+    }
+
     @Test func durationDropsLeadingZeroHour() {
         #expect(Timestamp.duration(754) == "12:34")
         #expect(Timestamp.duration(3723) == "1:02:03")

@@ -30,20 +30,39 @@ final class AppState {
         let settings = Settings()
         let modelManager = ModelManager()
         let engine = WhisperKitEngine(modelManager: modelManager)
-        let library = Library(folder: settings.libraryFolder)
+        var library = Library(folder: settings.libraryFolder)
+        var startupAlert: String?
+        do {
+            try library.ensureExists()
+        } catch {
+            AppLog.error("Carpeta guardada no disponible (\(library.folder.path)): \(error)")
+            settings.libraryFolder = Settings.defaultLibraryFolder
+            library = Library(folder: settings.libraryFolder)
+            try? library.ensureExists()
+            startupAlert = "La carpeta de transcripciones guardada no está disponible. Se usará Documentos/Transcripciones."
+        }
         self.settings = settings
         self.modelManager = modelManager
         self.engine = engine
         self.library = library
         self.queue = JobQueue(engine: engine, library: library, settings: settings)
-        try? library.ensureExists()
-        queue.onTranscriptSaved = { [weak self] transcript in
-            self?.refreshLibrary()
-            self?.selection = .transcript(transcript.id)
+        self.pendingAlert = startupAlert
+        queue.onTranscriptSaved = { [weak self] job, transcript in
+            guard let self else { return }
+            self.refreshLibrary()
+            // Follow the finished job only if the user is not looking at something else.
+            if self.selection == nil || self.selection == .job(job.id) {
+                let isListed = self.transcripts.contains { $0.id == transcript.id }
+                self.selection = isListed ? .transcript(transcript.id) : .job(job.id)
+            }
             AppLog.info("Transcripción guardada: \(transcript.title)")
         }
         queue.onJobFailed = { job, message in
             AppLog.error("Falló \(job.fileURL.lastPathComponent): \(message)")
+        }
+        queue.onLibraryFallback = { [weak self] folder in
+            self?.pendingAlert = "No se pudo guardar en la carpeta elegida; la transcripción quedó en Documentos/Transcripciones."
+            AppLog.error("Guardado en carpeta de respaldo: \(folder.path)")
         }
         refreshLibrary()
         needsModelDownload = !modelManager.isDownloaded(settings.modelChoice)

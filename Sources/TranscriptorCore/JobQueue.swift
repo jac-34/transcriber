@@ -39,8 +39,10 @@ public struct Job: Identifiable, Sendable, Equatable {
 @MainActor @Observable
 public final class JobQueue {
     public private(set) var jobs: [Job] = []
-    /// Called after each transcript is written to the library.
-    public var onTranscriptSaved: (@MainActor (Transcript) -> Void)?
+    /// Called after each transcript is written to the library, with the job that produced it.
+    public var onTranscriptSaved: (@MainActor (Job, Transcript) -> Void)?
+    /// Called when a transcript could not be saved in `library` and was saved in the fallback folder instead.
+    public var onLibraryFallback: (@MainActor (URL) -> Void)?
     /// Called when a job fails, with the Spanish message shown to the user.
     public var onJobFailed: (@MainActor (Job, String) -> Void)?
     /// True when the last built prompt had to drop glossary terms.
@@ -49,13 +51,18 @@ public final class JobQueue {
     private let engine: any TranscriptionEngine
     /// Where finished transcripts are saved. Replaced when the user changes the folder in settings.
     public var library: Library
+    /// Where a transcript goes when saving to `library` fails. Defaults to Documentos/Transcripciones.
+    private let fallbackLibrary: Library
     private let settings: Settings
     private var worker: Task<Void, Never>?
+    /// Set by `cancelAll`, reset when each job starts. Stops a job that is still loading the model.
+    private var cancelRequested = false
 
-    public init(engine: any TranscriptionEngine, library: Library, settings: Settings) {
+    public init(engine: any TranscriptionEngine, library: Library, settings: Settings, fallbackLibrary: Library? = nil) {
         self.engine = engine
         self.library = library
         self.settings = settings
+        self.fallbackLibrary = fallbackLibrary ?? Library(folder: Settings.defaultLibraryFolder)
     }
 
     /// Queues supported files. Returns one Spanish message per rejected URL.
@@ -80,6 +87,7 @@ public final class JobQueue {
     /// Drops waiting jobs and asks the engine to stop the current one.
     public func cancelAll() async {
         jobs.removeAll { if case .waiting = $0.state { return true } else { return false } }
+        cancelRequested = true
         await engine.cancel()
     }
 
@@ -106,6 +114,7 @@ public final class JobQueue {
 
     private func process(_ id: UUID) async {
         guard let job = jobs.first(where: { $0.id == id }) else { return }
+        cancelRequested = false
         do {
             guard FileManager.default.isReadableFile(atPath: job.fileURL.path) else {
                 throw TranscriptionError.fileUnreadable(job.fileURL.lastPathComponent)
@@ -122,6 +131,8 @@ public final class JobQueue {
             let prompt = await glossary.promptText(tokenCount: tokenCounter)
             lastPromptTruncated = prompt.truncated
 
+            // The engine only honours cancel() during transcription, so a cancel while loading stops here.
+            if cancelRequested { throw TranscriptionError.cancelled }
             update(id, .transcribing(0))
             let output = try await engine.transcribe(fileURL: job.fileURL, prompt: prompt.text) { [weak self] p in
                 Task { @MainActor in self?.update(id, .transcribing(p)) }
@@ -131,13 +142,29 @@ public final class JobQueue {
             let transcript = TranscriptPipeline.build(
                 output: output, sourceURL: job.fileURL, model: model, glossary: glossary, prompt: prompt.text
             )
-            let saved = try library.save(transcript)
+            let saved = try save(transcript)
             update(id, .done(saved))
-            onTranscriptSaved?(saved)
+            if let finished = jobs.first(where: { $0.id == id }) { onTranscriptSaved?(finished, saved) }
         } catch {
             let message = TranscriptionError.message(for: error)
             update(id, .failed(message))
             if let failed = jobs.first(where: { $0.id == id }) { onJobFailed?(failed, message) }
+        }
+    }
+
+    /// Saves to `library`; on failure retries once in `fallbackLibrary` and reports the fallback folder.
+    private func save(_ transcript: Transcript) throws -> Transcript {
+        do {
+            return try library.save(transcript)
+        } catch let primaryError {
+            do {
+                try fallbackLibrary.ensureExists()
+                let saved = try fallbackLibrary.save(transcript)
+                onLibraryFallback?(fallbackLibrary.folder)
+                return saved
+            } catch {
+                throw TranscriptionError.saveFailed(primaryError.localizedDescription)
+            }
         }
     }
 

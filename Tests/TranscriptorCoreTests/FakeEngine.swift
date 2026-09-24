@@ -8,6 +8,7 @@ actor FakeEngine: TranscriptionEngine {
     private(set) var prompts: [String?] = []
     private(set) var cancelCalls = 0
     var delayNanoseconds: UInt64 = 0
+    var prepareDelayNanoseconds: UInt64 = 0
 
     func set(_ fileName: String, _ result: Result<TranscriptionOutput, TranscriptionError>) {
         results[fileName] = result
@@ -15,8 +16,11 @@ actor FakeEngine: TranscriptionEngine {
 
     func setDelay(_ nanoseconds: UInt64) { delayNanoseconds = nanoseconds }
 
+    func setPrepareDelay(_ nanoseconds: UInt64) { prepareDelayNanoseconds = nanoseconds }
+
     func prepare(model: ModelChoice, progress: @escaping @Sendable (Double) -> Void) async throws {
         prepareCalls.append(model)
+        if prepareDelayNanoseconds > 0 { try await Task.sleep(nanoseconds: prepareDelayNanoseconds) }
         progress(1)
     }
 

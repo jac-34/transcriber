@@ -21,6 +21,11 @@ import Testing
         #expect(message.contains(".opus"))
     }
 
+    @Test func iCloudPlaceholderExplainsHowToDownload() {
+        let message = SupportedAudio.rejectionMessage(for: URL(fileURLWithPath: "/tmp/.clase 3.m4a.icloud"))
+        #expect(message == "\"clase 3.m4a\": este archivo aún no se descargó de iCloud. Ábrelo en Finder para descargarlo y vuelve a intentarlo.")
+    }
+
     @Test func genericMessageListsAcceptedFormats() {
         let message = SupportedAudio.rejectionMessage(for: URL(fileURLWithPath: "/tmp/apuntes.pdf"))
         #expect(message.contains(".pdf"))

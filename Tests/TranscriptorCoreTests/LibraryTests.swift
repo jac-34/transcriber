@@ -70,7 +70,9 @@ import Testing
     @Test func glossaryDefaultsToTemplateThenPersists() throws {
         let lib = try tempLibrary()
         #expect(lib.loadGlossaryText() == Glossary.templateText)
+        #expect(!lib.hasGlossaryFile)
         try lib.saveGlossaryText("enalapril\n")
+        #expect(lib.hasGlossaryFile)
         #expect(lib.loadGlossaryText() == "enalapril\n")
         #expect(FileManager.default.fileExists(atPath: lib.glossaryURL.path))
     }

@@ -19,6 +19,9 @@ public struct Library: Sendable {
 
     public var glossaryURL: URL { folder.appendingPathComponent(Library.glossaryFileName) }
 
+    /// True when `glosario.txt` exists in the folder (the template is not written until the user saves).
+    public var hasGlossaryFile: Bool { FileManager.default.fileExists(atPath: glossaryURL.path) }
+
     public func loadGlossaryText() -> String {
         (try? String(contentsOf: glossaryURL, encoding: .utf8)) ?? Glossary.templateText
     }

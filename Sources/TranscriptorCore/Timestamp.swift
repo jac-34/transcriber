@@ -14,7 +14,7 @@ public enum Timestamp {
     }
 
     private static func split(_ seconds: TimeInterval) -> (Int, Int, Int) {
-        let total = max(0, Int(seconds.rounded(.down)))
+        let total = seconds.isFinite ? max(0, Int(seconds.rounded(.down))) : 0
         return (total / 3600, (total % 3600) / 60, total % 60)
     }
 }

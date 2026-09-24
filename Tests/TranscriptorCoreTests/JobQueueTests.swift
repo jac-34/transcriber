@@ -31,7 +31,11 @@ import Testing
         await engine.set(b.lastPathComponent, .success(output))
 
         var saved: [String] = []
-        queue.onTranscriptSaved = { saved.append($0.title) }
+        var savedJobs: [UUID] = []
+        queue.onTranscriptSaved = { job, transcript in
+            savedJobs.append(job.id)
+            saved.append(transcript.title)
+        }
         queue.add([a, b])
         await queue.waitUntilIdle()
 
@@ -40,6 +44,7 @@ import Testing
             guard case .done = job.state else { Issue.record("expected done, got \(job.state)"); continue }
         }
         #expect(saved.count == 2)
+        #expect(savedJobs == queue.jobs.map(\.id))
         #expect(library.list().count == 2)
         #expect(await engine.prepareCalls == [.rapido, .rapido])
     }
@@ -125,6 +130,60 @@ import Testing
         #expect(await engine.cancelCalls == 1)
         #expect(queue.jobs.count == 1)  // b was removed while waiting
         #expect(queue.jobs[0].fileURL == a)
+    }
+
+    @Test func cancelAllDuringModelLoadStopsBeforeTranscribing() async throws {
+        let engine = FakeEngine()
+        await engine.setPrepareDelay(300_000_000)
+        let (queue, _) = try makeQueue(engine: engine)
+        let a = try touch("a.m4a")
+        await engine.set(a.lastPathComponent, .success(output))
+        queue.add([a])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await queue.cancelAll()
+        await queue.waitUntilIdle()
+
+        #expect(queue.jobs.count == 1)
+        #expect(queue.jobs[0].state == .failed("Cancelado."))
+        #expect(await engine.prompts.isEmpty)
+    }
+
+    @Test func saveFailureFallsBackToDefaultLibrary() async throws {
+        let engine = FakeEngine()
+        let blocker = try touch("archivo-normal")
+        let unwritable = Library(folder: blocker.appendingPathComponent("Transcripciones", isDirectory: true))
+        let fallback = Library(folder: FileManager.default.temporaryDirectory.appendingPathComponent("JobQueueTests-fallback-\(UUID().uuidString)"))
+        let settings = Settings(defaults: UserDefaults(suiteName: "JobQueueTests-\(UUID().uuidString)")!)
+        let queue = JobQueue(engine: engine, library: unwritable, settings: settings, fallbackLibrary: fallback)
+        var fallbackFolders: [URL] = []
+        queue.onLibraryFallback = { fallbackFolders.append($0) }
+        let a = try touch("a.m4a")
+        await engine.set(a.lastPathComponent, .success(output))
+        queue.add([a])
+        await queue.waitUntilIdle()
+
+        guard case .done = queue.jobs[0].state else { Issue.record("expected done, got \(queue.jobs[0].state)"); return }
+        #expect(fallback.list().count == 1)
+        #expect(fallbackFolders == [fallback.folder])
+    }
+
+    @Test func saveFailureInBothFoldersFailsTheJob() async throws {
+        let engine = FakeEngine()
+        let blocker = try touch("archivo-normal")
+        let unwritable = Library(folder: blocker.appendingPathComponent("a", isDirectory: true))
+        let alsoUnwritable = Library(folder: blocker.appendingPathComponent("b", isDirectory: true))
+        let settings = Settings(defaults: UserDefaults(suiteName: "JobQueueTests-\(UUID().uuidString)")!)
+        let queue = JobQueue(engine: engine, library: unwritable, settings: settings, fallbackLibrary: alsoUnwritable)
+        var fallbackCalls = 0
+        queue.onLibraryFallback = { _ in fallbackCalls += 1 }
+        let a = try touch("a.m4a")
+        await engine.set(a.lastPathComponent, .success(output))
+        queue.add([a])
+        await queue.waitUntilIdle()
+
+        guard case .failed(let message) = queue.jobs[0].state else { Issue.record("expected failed"); return }
+        #expect(message.hasPrefix("No se pudo guardar la transcripción: "))
+        #expect(fallbackCalls == 0)
     }
 
     @Test func clearFinishedKeepsActiveJobs() async throws {

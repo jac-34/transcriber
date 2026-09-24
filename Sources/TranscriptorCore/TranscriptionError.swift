@@ -8,6 +8,7 @@ public enum TranscriptionError: Error, LocalizedError, Sendable, Equatable {
     case modelLoadFailed(String)
     case cancelled
     case engineFailure(String)
+    case saveFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -23,6 +24,8 @@ public enum TranscriptionError: Error, LocalizedError, Sendable, Equatable {
             return "Cancelado."
         case .engineFailure(let detail):
             return "La transcripción falló. (\(detail))"
+        case .saveFailed(let detail):
+            return "No se pudo guardar la transcripción: \(detail)"
         }
     }
 
@@ -30,6 +33,6 @@ public enum TranscriptionError: Error, LocalizedError, Sendable, Equatable {
     public static func message(for error: Error) -> String {
         if let known = error as? TranscriptionError { return known.errorDescription ?? "Error." }
         if error is CancellationError { return TranscriptionError.cancelled.errorDescription! }
-        return "Error inesperado: \(String(describing: error))"
+        return "Error inesperado: \(error.localizedDescription)"
     }
 }

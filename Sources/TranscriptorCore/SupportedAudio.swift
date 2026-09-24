@@ -16,6 +16,12 @@ public enum SupportedAudio {
     public static func rejectionMessage(for url: URL) -> String {
         let ext = url.pathExtension.lowercased()
         let name = url.lastPathComponent
+        if ext == "icloud" {
+            // iCloud placeholders are named ".clase.m4a.icloud"; show the real file name.
+            var shown = url.deletingPathExtension().lastPathComponent
+            if shown.hasPrefix(".") { shown.removeFirst() }
+            return "\"\(shown)\": este archivo aún no se descargó de iCloud. Ábrelo en Finder para descargarlo y vuelve a intentarlo."
+        }
         if opusLike.contains(ext) {
             return "\"\(name)\": los audios .\(ext) (notas de voz de WhatsApp en Android) no son compatibles. Conviértelo a .m4a o .mp3 primero."
         }
