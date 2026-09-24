@@ -25,11 +25,14 @@ public struct ModelManager: Sendable {
             .appendingPathComponent(model.whisperVariant, isDirectory: true)
     }
 
+    /// Files a model folder must contain before it is loaded without contacting the network.
+    static let requiredFiles = ["AudioEncoder.mlmodelc", "TextDecoder.mlmodelc", "MelSpectrogram.mlmodelc", "config.json"]
+
     public func isDownloaded(_ model: ModelChoice) -> Bool {
         let folder = folder(for: model)
-        let fm = FileManager.default
-        return fm.fileExists(atPath: folder.appendingPathComponent("TextDecoder.mlmodelc").path)
-            && fm.fileExists(atPath: folder.appendingPathComponent("config.json").path)
+        return ModelManager.requiredFiles.allSatisfy {
+            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+        }
     }
 
     /// Downloads the model files. `progress` is 0...1. Resumable by the underlying Hub client.
@@ -43,7 +46,8 @@ public struct ModelManager: Sendable {
                 progressCallback: { p in progress(p.fractionCompleted) }
             )
         } catch {
-            throw TranscriptionError.modelDownloadFailed(String(describing: error))
+            EngineLog.error("Descarga de \(model.whisperVariant) falló", error)
+            throw TranscriptionError.modelDownloadFailed(userFacingDetail(error))
         }
     }
 }
