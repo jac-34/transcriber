@@ -20,7 +20,7 @@ public enum SupportedAudio {
             return "\"\(name)\": los audios .\(ext) (notas de voz de WhatsApp en Android) no son compatibles. Conviértelo a .m4a o .mp3 primero."
         }
         let shown = ext.isEmpty ? "(sin extensión)" : ".\(ext)"
-        let accepted = "m4a, mp3, wav, aac, aiff, caf, flac, mp4, mov"
+        let accepted = extensions.sorted().joined(separator: ", ")
         return "\"\(name)\": el formato \(shown) no es compatible. Formatos aceptados: \(accepted)."
     }
 }
