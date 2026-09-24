@@ -21,7 +21,9 @@ struct SettingsSheet: View {
                 .labelsHidden()
                 Text(settings.modelChoice.detailText).font(.callout).foregroundStyle(.secondary)
                 if !state.modelManager.isDownloaded(settings.modelChoice) {
-                    Text("Este modelo aún no está descargado. Se descargará al cerrar los ajustes.")
+                    Text(state.hasActiveJobs
+                        ? "Este modelo aún no está descargado. Se descargará cuando termine la cola."
+                        : "Este modelo aún no está descargado. Se descargará al cerrar los ajustes.")
                         .font(.callout).foregroundStyle(.orange)
                 }
             }

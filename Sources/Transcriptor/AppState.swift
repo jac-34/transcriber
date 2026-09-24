@@ -75,8 +75,8 @@ final class AppState {
 
     func addFiles(_ urls: [URL]) {
         let rejections = queue.add(urls)
-        if let first = queue.jobs.last(where: { !$0.isFinished }), selection == nil {
-            selection = .job(first.id)
+        if let newest = queue.jobs.last(where: { !$0.isFinished }), selection == nil {
+            selection = .job(newest.id)
         }
         if !rejections.isEmpty {
             pendingAlert = rejections.joined(separator: "\n\n")
@@ -119,8 +119,13 @@ final class AppState {
         }
     }
 
+    /// True while any job is waiting or running.
+    var hasActiveJobs: Bool { queue.jobs.contains { !$0.isFinished } }
+
+    /// Shows the download sheet for a missing model only when the queue is idle; otherwise the
+    /// next job downloads it while its row shows "Cargando modelo…".
     func modelChoiceChanged() {
-        needsModelDownload = !modelManager.isDownloaded(settings.modelChoice)
+        needsModelDownload = !modelManager.isDownloaded(settings.modelChoice) && !hasActiveJobs
     }
 
     func export(_ transcript: Transcript, as format: ExportFormat) {
@@ -152,10 +157,23 @@ final class AppState {
     }
 
     func changeLibraryFolder(_ url: URL) {
+        let old = library
+        let new = Library(folder: url)
+        do {
+            try new.ensureExists()
+        } catch {
+            AppLog.error("No se pudo crear la carpeta \(url.path): \(error)")
+        }
+        if !new.hasGlossaryFile && old.hasGlossaryFile {
+            do {
+                try FileManager.default.copyItem(at: old.glossaryURL, to: new.glossaryURL)
+            } catch {
+                AppLog.error("No se pudo copiar el glosario a \(url.path): \(error)")
+            }
+        }
         settings.libraryFolder = url
-        library = Library(folder: url)
-        queue.library = library
-        try? library.ensureExists()
+        library = new
+        queue.library = new
         refreshLibrary()
         AppLog.info("Carpeta cambiada: \(url.path)")
     }

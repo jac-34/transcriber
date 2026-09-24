@@ -22,5 +22,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    private var hasActiveJobs: Bool { state?.hasActiveJobs == true }
+
+    /// Asks before quitting while a transcription is waiting or running.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard hasActiveJobs else { return .terminateNow }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Hay una transcripción en curso."
+        alert.informativeText = "Si sales ahora se perderá el progreso de ese archivo."
+        alert.addButton(withTitle: "Salir de todos modos")
+        alert.addButton(withTitle: "Seguir transcribiendo")
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
+    /// Closing the window keeps the app running while jobs are active.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !hasActiveJobs }
 }
