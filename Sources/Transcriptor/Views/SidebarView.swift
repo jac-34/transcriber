@@ -5,11 +5,19 @@ struct SidebarView: View {
     @Environment(AppState.self) private var state
     @Binding var selection: SidebarItem?
 
+    /// Jobs worth showing: anything unfinished, plus failures the user has not cleared.
+    private var activeJobs: [Job] {
+        state.queue.jobs.filter { job in
+            if case .done = job.state { return false }
+            return true
+        }
+    }
+
     var body: some View {
         List(selection: $selection) {
-            if !state.queue.jobs.isEmpty {
+            if !activeJobs.isEmpty {
                 Section("En proceso") {
-                    ForEach(state.queue.jobs) { job in
+                    ForEach(activeJobs) { job in
                         JobRowView(job: job).tag(SidebarItem.job(job.id))
                     }
                 }
