@@ -32,8 +32,33 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { state.openFilesPanel() } label: { Label("Agregar audios", systemImage: "plus") }
                     .help("Agregar archivos de audio a la cola")
+                if let transcript = state.transcript(for: state.selection) {
+                    Menu {
+                        ForEach(ExportFormat.allCases) { format in
+                            Button(format.label) { state.export(transcript, as: format) }
+                        }
+                    } label: { Label("Exportar", systemImage: "square.and.arrow.up") }
+                    .help("Guardar la transcripción como archivo")
+                    Button { state.reapplyGlossary(to: transcript) } label: { Label("Re-aplicar glosario", systemImage: "arrow.triangle.2.circlepath") }
+                        .help("Volver a aplicar las correcciones del glosario a esta transcripción")
+                }
+                Button { state.revealLibraryFolder() } label: { Label("Abrir carpeta", systemImage: "folder") }
+                    .help("Mostrar la carpeta de transcripciones en el Finder")
+                Button { state.showGlossary = true } label: { Label("Glosario", systemImage: "text.book.closed") }
+                Button { state.showSettings = true } label: { Label("Ajustes", systemImage: "gearshape") }
+            }
+            ToolbarItemGroup(placement: .navigation) {
+                if state.queue.jobs.contains(where: { !$0.isFinished }) {
+                    Button("Cancelar todo") { Task { await state.queue.cancelAll() } }
+                }
+                if state.queue.jobs.contains(where: \.isFinished) {
+                    Button("Limpiar listos") { state.queue.clearFinished() }
+                }
             }
         }
+        .sheet(isPresented: $state.needsModelDownload) { ModelDownloadView().environment(state) }
+        .sheet(isPresented: $state.showSettings) { SettingsSheet().environment(state) }
+        .sheet(isPresented: $state.showGlossary) { GlossarySheet(currentTranscript: state.transcript(for: state.selection)).environment(state) }
         .dropDestination(for: URL.self) { urls, _ in
             state.addFiles(urls)
             return true

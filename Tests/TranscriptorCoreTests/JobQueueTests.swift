@@ -137,4 +137,17 @@ import Testing
         queue.clearFinished()
         #expect(queue.jobs.isEmpty)
     }
+
+    @Test func changingLibrarySavesNewJobsThere() async throws {
+        let engine = FakeEngine()
+        let (queue, _) = try makeQueue(engine: engine)
+        let other = Library(folder: FileManager.default.temporaryDirectory.appendingPathComponent("JobQueueTests-other-\(UUID().uuidString)"))
+        try other.ensureExists()
+        queue.library = other
+        let a = try touch("a.m4a")
+        await engine.set(a.lastPathComponent, .success(output))
+        queue.add([a])
+        await queue.waitUntilIdle()
+        #expect(other.list().count == 1)
+    }
 }

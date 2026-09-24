@@ -21,6 +21,10 @@ final class AppState {
     /// One-line Spanish message shown in an alert, then cleared.
     var pendingAlert: String?
     var needsModelDownload = false
+    var downloadProgress: Double?
+    var downloadError: String?
+    var showSettings = false
+    var showGlossary = false
 
     init() {
         let settings = Settings()
@@ -74,6 +78,76 @@ final class AppState {
             return nil
         case nil:
             return nil
+        }
+    }
+
+    /// Downloads and loads the selected model, driving the first-launch screen.
+    func prepareModel() async {
+        downloadError = nil
+        downloadProgress = 0
+        do {
+            try await engine.prepare(model: settings.modelChoice) { [weak self] p in
+                Task { @MainActor in self?.downloadProgress = p }
+            }
+            needsModelDownload = false
+            downloadProgress = nil
+            AppLog.info("Modelo listo: \(settings.modelChoice.rawValue)")
+        } catch {
+            let message = TranscriptionError.message(for: error)
+            downloadError = message
+            downloadProgress = nil
+            AppLog.error("Fallo al preparar modelo: \(message)")
+        }
+    }
+
+    func modelChoiceChanged() {
+        needsModelDownload = !modelManager.isDownloaded(settings.modelChoice)
+    }
+
+    func export(_ transcript: Transcript, as format: ExportFormat) {
+        guard let destination = FilePanels.chooseExportDestination(suggestedName: Library.sanitizedStem(transcript.title), format: format) else { return }
+        let content = format == .markdown ? transcript.renderMarkdown() : transcript.renderPlainText()
+        do {
+            try content.write(to: destination, atomically: true, encoding: .utf8)
+        } catch {
+            pendingAlert = "No se pudo guardar el archivo: \(error.localizedDescription)"
+            AppLog.error("Exportar falló: \(error)")
+        }
+    }
+
+    func revealLibraryFolder() {
+        try? library.ensureExists()
+        FilePanels.reveal(library.folder)
+    }
+
+    func reapplyGlossary(to transcript: Transcript) {
+        let glossary = Glossary(text: library.loadGlossaryText())
+        let updated = TranscriptPipeline.reapply(glossary: glossary, to: transcript)
+        do {
+            _ = try library.save(updated)
+            refreshLibrary()
+            selection = .transcript(updated.id)
+        } catch {
+            pendingAlert = "No se pudo guardar la transcripción corregida: \(error.localizedDescription)"
+        }
+    }
+
+    func changeLibraryFolder(_ url: URL) {
+        settings.libraryFolder = url
+        library = Library(folder: url)
+        queue.library = library
+        try? library.ensureExists()
+        refreshLibrary()
+        AppLog.info("Carpeta cambiada: \(url.path)")
+    }
+
+    func loadGlossaryText() -> String { library.loadGlossaryText() }
+
+    func saveGlossaryText(_ text: String) {
+        do {
+            try library.saveGlossaryText(text)
+        } catch {
+            pendingAlert = "No se pudo guardar el glosario: \(error.localizedDescription)"
         }
     }
 }
