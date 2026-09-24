@@ -7,10 +7,18 @@ let package = Package(
     products: [
         .executable(name: "Transcriptor", targets: ["Transcriptor"]),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.0"),
+    ],
     targets: [
         .target(name: "TranscriptorCore"),
-        .target(name: "TranscriptorEngine", dependencies: ["TranscriptorCore"]),
+        .target(
+            name: "TranscriptorEngine",
+            dependencies: [
+                "TranscriptorCore",
+                .product(name: "WhisperKit", package: "WhisperKit"),
+            ]
+        ),
         .executableTarget(
             name: "Transcriptor",
             dependencies: ["TranscriptorCore", "TranscriptorEngine"]
