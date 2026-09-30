@@ -2,14 +2,23 @@ import Foundation
 
 /// Every failure the UI can show. Descriptions are plain Spanish, one sentence.
 public enum TranscriptionError: Error, LocalizedError, Sendable, Equatable {
+    /// File format rejected by `SupportedAudio`; the associated value is the message to show as-is.
     case unsupportedFormat(String)
+    /// Source file could not be read; the associated value is its file name.
     case fileUnreadable(String)
+    /// Model download failed; the associated value is the underlying error detail.
     case modelDownloadFailed(String)
+    /// Model failed to load after downloading; the associated value is the underlying error detail.
     case modelLoadFailed(String)
+    /// The job was cancelled by the user.
     case cancelled
+    /// Transcription failed inside the engine; the associated value is the underlying error detail.
     case engineFailure(String)
+    /// The transcript could not be written to the library; the associated value is the
+    /// underlying error detail.
     case saveFailed(String)
 
+    /// Spanish message shown to the user for this error.
     public var errorDescription: String? {
         switch self {
         case .unsupportedFormat(let message):
@@ -29,7 +38,8 @@ public enum TranscriptionError: Error, LocalizedError, Sendable, Equatable {
         }
     }
 
-    /// Message for any thrown error, in Spanish.
+    /// Message for any thrown error, in Spanish. Recognizes `TranscriptionError` and
+    /// `CancellationError`; any other error falls back to its `localizedDescription`.
     public static func message(for error: Error) -> String {
         if let known = error as? TranscriptionError { return known.errorDescription ?? "Error." }
         if error is CancellationError { return TranscriptionError.cancelled.errorDescription! }

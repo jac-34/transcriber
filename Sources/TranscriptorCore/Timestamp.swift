@@ -1,5 +1,6 @@
 import Foundation
 
+/// Formats seconds as human-readable time strings.
 public enum Timestamp {
     /// "[hh:mm:ss]" with hours always present so columns align.
     public static func bracket(_ seconds: TimeInterval) -> String {
@@ -13,6 +14,7 @@ public enum Timestamp {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 
+    /// Splits `seconds` into (hours, minutes, seconds), clamping non-finite or negative input to zero.
     private static func split(_ seconds: TimeInterval) -> (Int, Int, Int) {
         let total = seconds.isFinite ? max(0, Int(seconds.rounded(.down))) : 0
         return (total / 3600, (total % 3600) / 60, total % 60)

@@ -2,9 +2,12 @@ import Foundation
 
 /// The two speech models the user can pick between.
 public enum ModelChoice: String, CaseIterable, Codable, Sendable, Identifiable {
+    /// Whisper large-v3-turbo: slower, more accurate.
     case preciso
+    /// Whisper small: faster, less accurate.
     case rapido
 
+    /// Raw value used as the stable identifier.
     public var id: String { rawValue }
 
     /// WhisperKit variant name inside the argmaxinc/whisperkit-coreml repo.
@@ -15,6 +18,7 @@ public enum ModelChoice: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
+    /// Spanish name shown in the model picker.
     public var displayName: String {
         switch self {
         case .preciso: "Preciso"
@@ -30,8 +34,7 @@ public enum ModelChoice: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// Parallel decoding windows. Inside the app the Neural Engine times out CoreML predictions when the turbo
-    /// model runs 6 or more windows at once (WhisperKit then drops those chunks); 2 decode as fast as 4 on an M5.
+    /// Number of decoding windows the engine runs in parallel for this model.
     public var concurrentWorkers: Int {
         switch self {
         case .preciso: 2

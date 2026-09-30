@@ -6,8 +6,10 @@ public actor AsyncLock {
     private var locked = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
+    /// Creates an unlocked lock.
     public init() {}
 
+    /// Waits until the lock is free, then holds it. Callers are queued in FIFO order.
     public func acquire() async {
         guard locked else {
             locked = true
@@ -16,6 +18,7 @@ public actor AsyncLock {
         await withCheckedContinuation { waiters.append($0) }
     }
 
+    /// Releases the lock, resuming the longest-waiting caller if one exists.
     public func release() {
         if waiters.isEmpty {
             locked = false

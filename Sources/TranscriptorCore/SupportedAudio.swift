@@ -2,6 +2,7 @@ import Foundation
 
 /// File types the app accepts. AVFoundation decodes all of these natively.
 public enum SupportedAudio {
+    /// Lowercase file extensions accepted for transcription, without the leading dot.
     public static let extensions: Set<String> = [
         "m4a", "mp3", "wav", "aac", "aiff", "aif", "caf", "flac", "mp4", "mov", "m4v",
     ]
@@ -9,10 +10,13 @@ public enum SupportedAudio {
     /// Extensions we know people will try and that AVFoundation cannot decode.
     private static let opusLike: Set<String> = ["opus", "ogg", "oga"]
 
+    /// True when `url`'s extension is in `extensions`, case-insensitively.
     public static func isSupported(_ url: URL) -> Bool {
         extensions.contains(url.pathExtension.lowercased())
     }
 
+    /// Spanish message explaining why `url` was rejected: tailored for an undownloaded iCloud
+    /// placeholder, a known unsupported format such as .opus, or any other unsupported extension.
     public static func rejectionMessage(for url: URL) -> String {
         let ext = url.pathExtension.lowercased()
         let name = url.lastPathComponent

@@ -1,9 +1,13 @@
 import Foundation
 
+/// Raw result of transcribing one file, before hallucination filtering or glossary corrections.
 public struct TranscriptionOutput: Sendable, Equatable {
+    /// Decoded segments in engine order.
     public var segments: [Segment]
+    /// Length of the transcribed audio, in seconds.
     public var audioDuration: TimeInterval
 
+    /// Creates a transcription output.
     public init(segments: [Segment], audioDuration: TimeInterval) {
         self.segments = segments
         self.audioDuration = audioDuration

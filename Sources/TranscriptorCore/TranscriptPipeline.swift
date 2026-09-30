@@ -2,6 +2,8 @@ import Foundation
 
 /// The steps between raw engine output and a saved transcript.
 public enum TranscriptPipeline {
+    /// Builds a `Transcript` from raw engine output: filters hallucinations, applies glossary
+    /// corrections, and formats segments into paragraphs. `now` defaults to the current date.
     public static func build(
         output: TranscriptionOutput,
         sourceURL: URL,
@@ -30,6 +32,7 @@ public enum TranscriptPipeline {
         return updated
     }
 
+    /// Applies `glossary` corrections to each segment's text, then formats the result into paragraphs.
     private static func paragraphs(from segments: [Segment], glossary: Glossary) -> [Paragraph] {
         let corrected = segments.map { segment in
             var s = segment

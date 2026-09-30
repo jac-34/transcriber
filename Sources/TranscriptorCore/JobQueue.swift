@@ -1,20 +1,32 @@
 import Foundation
 import Observation
 
+/// One file queued for transcription and its current progress.
 public struct Job: Identifiable, Sendable, Equatable {
+    /// Stage a job passes through from queued to finished.
     public enum State: Sendable, Equatable {
+        /// Queued, not yet started.
         case waiting
+        /// Downloading or loading the model. The value is progress from 0 to 1.
         case loadingModel(Double)
+        /// Decoding audio. The value is progress from 0 to 1.
         case transcribing(Double)
+        /// Formatting paragraphs and applying glossary corrections to the raw transcript.
         case applyingGlossary
+        /// Finished successfully with the saved transcript.
         case done(Transcript)
+        /// Finished with the Spanish error message shown to the user.
         case failed(String)
     }
 
+    /// Stable identity for this job.
     public let id: UUID
+    /// Source audio file to transcribe.
     public let fileURL: URL
+    /// Current stage of the job.
     public var state: State
 
+    /// True once the job has reached `.done` or `.failed`.
     public var isFinished: Bool {
         switch state {
         case .done, .failed: true
@@ -38,6 +50,7 @@ public struct Job: Identifiable, Sendable, Equatable {
 /// Sequential processor: one file at a time, failures never stop the line.
 @MainActor @Observable
 public final class JobQueue {
+    /// All jobs in the order they were added. Finished jobs remain until `clearFinished` runs.
     public private(set) var jobs: [Job] = []
     /// Called after each transcript is written to the library, with the job that produced it.
     public var onTranscriptSaved: (@MainActor (Job, Transcript) -> Void)?
@@ -54,10 +67,13 @@ public final class JobQueue {
     /// Where a transcript goes when saving to `library` fails. Defaults to Documentos/Transcripciones.
     private let fallbackLibrary: Library
     private let settings: Settings
+    /// Task processing jobs one at a time; `nil` when idle.
     private var worker: Task<Void, Never>?
     /// Set by `cancelAll`, reset when each job starts. Stops a job that is still loading the model.
     private var cancelRequested = false
 
+    /// Creates a queue that processes jobs with `engine`, saving results to `library` and falling
+    /// back to `fallbackLibrary` (or the default library folder) when saving to `library` fails.
     public init(engine: any TranscriptionEngine, library: Library, settings: Settings, fallbackLibrary: Library? = nil) {
         self.engine = engine
         self.library = library
@@ -91,6 +107,7 @@ public final class JobQueue {
         await engine.cancel()
     }
 
+    /// Removes all finished jobs (done or failed) from `jobs`.
     public func clearFinished() {
         jobs.removeAll(where: \.isFinished)
     }
@@ -102,6 +119,7 @@ public final class JobQueue {
 
     // MARK: Processing
 
+    /// Starts the worker task if none is currently running.
     private func startIfNeeded() {
         guard worker == nil else { return }
         worker = Task { [weak self] in
@@ -112,6 +130,9 @@ public final class JobQueue {
         }
     }
 
+    /// Runs one job end to end: loads the model, builds the glossary prompt, transcribes,
+    /// formats and saves the result, updating `state` at each step. Reports failure via
+    /// `onJobFailed` instead of throwing.
     private func process(_ id: UUID) async {
         guard let job = jobs.first(where: { $0.id == id }) else { return }
         cancelRequested = false

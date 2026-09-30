@@ -2,23 +2,33 @@ import Foundation
 
 /// User-maintained vocabulary: terms that bias decoding and corrections applied afterwards.
 public struct Glossary: Sendable, Equatable {
+    /// A wrong-to-right text replacement applied after transcription.
     public struct Correction: Sendable, Equatable {
+        /// Text as Whisper is known to produce it.
         public var wrong: String
+        /// Text to substitute in its place.
         public var right: String
+        /// Creates a correction pairing `wrong` with `right`.
         public init(wrong: String, right: String) {
             self.wrong = wrong
             self.right = right
         }
     }
 
+    /// One line of a glossary file that could not be parsed.
     public struct ParseError: Sendable, Equatable {
+        /// 1-based line number in the source text.
         public var line: Int
+        /// Spanish description of what is wrong with the line.
         public var message: String
     }
 
+    /// Maximum tokens the glossary prompt may use.
     public static let promptTokenBudget = 200
+    /// Spanish sentence prepended before the listed terms in the decoding prompt.
     public static let promptPrefix = "Clase de medicina. Términos: "
 
+    /// Default glossary file contents written for a new user.
     public static let templateText = """
     # Glosario de Transcriptor
     # Una entrada por línea. Las líneas que empiezan con # son comentarios.
@@ -35,10 +45,17 @@ public struct Glossary: Sendable, Equatable {
     hipercalemia => hiperkalemia
     """
 
+    /// Vocabulary terms in file order, deduplicated case-insensitively.
     public private(set) var terms: [String] = []
+    /// Corrections in file order.
     public private(set) var corrections: [Correction] = []
+    /// Lines that could not be parsed, in file order.
     public private(set) var parseErrors: [ParseError] = []
 
+    /// Parses `text` line by line: blank lines and lines starting with `#` are ignored, a line
+    /// containing `=>` becomes a correction whose right side is also added as a term, and any
+    /// other non-empty line becomes a term. Terms are deduplicated case-insensitively, keeping
+    /// the first spelling seen.
     public init(text: String) {
         var seen = Set<String>()
         func addTerm(_ term: String) {
@@ -66,6 +83,8 @@ public struct Glossary: Sendable, Equatable {
     }
 
     /// Builds the decoding prompt from terms in file order, stopping at the token budget.
+    /// Returns `nil` text when there are no terms, and `truncated` true when not every term fit
+    /// within `Self.promptTokenBudget` tokens as measured by `tokenCount`.
     public func promptText(tokenCount: (String) async -> Int) async -> (text: String?, truncated: Bool) {
         guard !terms.isEmpty else { return (nil, false) }
         var included: [String] = []
