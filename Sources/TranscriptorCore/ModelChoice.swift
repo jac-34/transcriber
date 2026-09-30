@@ -30,10 +30,11 @@ public enum ModelChoice: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// Parallel decoding windows. Measured best value on an M5 for the turbo model (decoder on the Neural Engine).
+    /// Parallel decoding windows. Inside the app the Neural Engine times out CoreML predictions when the turbo
+    /// model runs 6 or more windows at once (WhisperKit then drops those chunks); 2 decode as fast as 4 on an M5.
     public var concurrentWorkers: Int {
         switch self {
-        case .preciso: 16
+        case .preciso: 2
         case .rapido: 4
         }
     }
