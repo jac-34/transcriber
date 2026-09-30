@@ -1,7 +1,11 @@
 import Foundation
 import WhisperKit
 
-/// Short Spanish-friendly detail for the parenthesis in engine error messages.
+/// Returns a short, Spanish-language detail for the parenthesis in an engine error message.
+///
+/// Returns "sin conexión a internet" for a `URLError`, "cancelado" for a `CancellationError`,
+/// "faltan archivos del modelo" for a `WhisperError` reporting missing model files, and otherwise
+/// the first 120 characters of `error.localizedDescription`.
 func userFacingDetail(_ error: Error) -> String {
     if error is URLError { return "sin conexión a internet" }
     if error is CancellationError { return "cancelado" }

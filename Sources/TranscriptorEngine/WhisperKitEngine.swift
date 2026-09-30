@@ -4,33 +4,45 @@ import os
 import TranscriptorCore
 import WhisperKit
 
-/// WhisperKit adapter. `prepare` and `transcribe` run one at a time under `operationLock`, so a second
-/// `prepare` never downloads twice and a model is never unloaded under a running transcription.
-/// `@unchecked Sendable` because WhisperKit's class is not Sendable; the loaded instance lives in `stateLock`.
+/// WhisperKit-backed implementation of `TranscriptionEngine`, used by `Transcriptor`.
+/// `prepare` and `transcribe` run one at a time, so a second `prepare` never downloads twice and a
+/// model is never unloaded while a transcription may be running.
 public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
     private let modelManager: ModelManager
+    /// Serializes `prepare` and `transcribe` so they never run concurrently.
     private let operationLock = AsyncLock()
     private let cancelFlag = OSAllocatedUnfairLock(initialState: false)
     // uncheckedState/withLockUnchecked because LoadedState holds a non-Sendable WhisperKit instance.
+    /// Guards the currently loaded WhisperKit instance and model.
     private let stateLock = OSAllocatedUnfairLock(uncheckedState: LoadedState())
 
+    /// The currently loaded WhisperKit instance and model, or empty when nothing is loaded.
     private struct LoadedState {
         var whisperKit: WhisperKit?
         var model: ModelChoice?
     }
 
+    /// Creates an engine that loads and downloads models through `modelManager`.
     public init(modelManager: ModelManager) {
         self.modelManager = modelManager
     }
 
     // MARK: TranscriptionEngine
 
+    /// Downloads (if needed) and loads `model` through `ModelManager`, retrying once with a fresh
+    /// download if the load fails after a successful download. Idempotent when `model` is already
+    /// loaded. `progress` reports 0 to 1 across download and load.
     public func prepare(model: ModelChoice, progress: @escaping @Sendable (Double) -> Void) async throws {
         try await operationLock.withLock {
             try await self.prepareLocked(model: model, progress: progress)
         }
     }
 
+    /// Transcribes the audio at `fileURL` in Spanish, using `prompt` to bias decoding when given.
+    /// Recovers any audio WhisperKit fails to decode and throws `TranscriptionError.engineFailure`
+    /// if the transcript still does not cover `CoverageGaps.minimumCoverage` of the audio, or if the
+    /// process memory footprint exceeds its limit. Throws `TranscriptionError.cancelled` if `cancel()`
+    /// is called. `progress` reports 0 to 1.
     public func transcribe(fileURL: URL, prompt: String?, progress: @escaping @Sendable (Double) -> Void) async throws -> TranscriptionOutput {
         // Reset before waiting for the lock so a cancel() that arrives while waiting is still honoured.
         cancelFlag.withLock { $0 = false }
@@ -39,6 +51,8 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         }
     }
 
+    /// Downloads `model` if needed, unloads any previously loaded model, and loads `model`.
+    /// Retries once with a freshly downloaded folder if the initial load fails. Runs under `operationLock`.
     private func prepareLocked(model: ModelChoice, progress: @escaping @Sendable (Double) -> Void) async throws {
         let current = stateLock.withLockUnchecked { $0 }
         if current.model == model, current.whisperKit != nil {
@@ -79,6 +93,8 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         progress(1)
     }
 
+    /// Transcribes `fileURL` with the currently loaded model. Throws `TranscriptionError.modelLoadFailed`
+    /// if no model is loaded. Runs under `operationLock`.
     private func transcribeLocked(fileURL: URL, prompt: String?, progress: @escaping @Sendable (Double) -> Void) async throws -> TranscriptionOutput {
         let state = stateLock.withLockUnchecked { $0 }
         guard let whisperKit = state.whisperKit, let model = state.model else {
@@ -181,6 +197,8 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         return TranscriptionOutput(segments: segments, audioDuration: duration)
     }
 
+    /// Returns the token count of `text` under the loaded model's tokenizer, or an estimate of
+    /// 1.3 tokens per word when no model is loaded.
     public func tokenCount(_ text: String) async -> Int {
         guard let tokenizer = stateLock.withLockUnchecked({ $0.whisperKit })?.tokenizer else {
             // Rough fallback before a model is loaded: Whisper averages ~1.3 tokens per Spanish word.
@@ -189,6 +207,7 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         return tokenizer.encode(text: " " + text).count
     }
 
+    /// Requests that the current or next transcription stop as soon as possible.
     public func cancel() async {
         cancelFlag.withLock { $0 = true }
     }
@@ -259,6 +278,8 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         return (results, ranges)
     }
 
+    /// Loads `model` from `folder` into a `WhisperKit` instance, resolving the tokenizer from
+    /// `modelManager.downloadBase` so it is found offline.
     private func load(_ model: ModelChoice, from folder: URL) async throws -> WhisperKit {
         let config = WhisperKitConfig(
             model: model.whisperVariant,
@@ -275,14 +296,13 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         return try await WhisperKit(config)
     }
 
-    /// Encoder and decoder both on the Neural Engine. The text decoder must not run on the GPU: on macOS 26
-    /// CoreML's GPU path leaks ~0.35 MB per decoder step (MPSTemporaryNDArray/AGX buffers, not autoreleased
-    /// objects), which grew a 93-minute lecture past 30 GB. On the Neural Engine the footprint stays flat.
+    /// Returns compute options with the audio encoder and text decoder both on the Neural Engine.
+    /// The text decoder must never run on the GPU.
     private func computeOptions(for model: ModelChoice) -> ModelComputeOptions {
         ModelComputeOptions(audioEncoderCompute: .cpuAndNeuralEngine, textDecoderCompute: .cpuAndNeuralEngine)
     }
 
-    /// Footprint above which a transcription is stopped: half of physical memory. A full lecture peaks at ~2.5 GB.
+    /// Footprint above which a transcription is stopped: half of physical memory.
     static var memoryLimitBytes: UInt64 { ProcessInfo.processInfo.physicalMemory / 2 }
 
     /// This process's physical footprint (the figure Jetsam acts on), or nil if the kernel call fails.
@@ -297,12 +317,15 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         return result == KERN_SUCCESS ? info.phys_footprint : nil
     }
 
+    /// Logs and returns the `TranscriptionError` for a transcription of `fileURL` stopped by the memory limit.
     private static func memoryLimitError(_ fileURL: URL) -> TranscriptionError {
         let limitGB = Double(memoryLimitBytes) / 1_073_741_824
         EngineLog.logger.error("Transcripción de \(fileURL.lastPathComponent, privacy: .public) detenida: memoria sobre \(limitGB, format: .fixed(precision: 1)) GB")
         return .engineFailure("se detuvo porque usaba demasiada memoria")
     }
 
+    /// Returns the duration of the audio at `url`. Throws `TranscriptionError.fileUnreadable`
+    /// if the duration cannot be read or is not positive.
     private func audioDuration(of url: URL) async throws -> TimeInterval {
         do {
             let asset = AVURLAsset(url: url)
