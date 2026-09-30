@@ -23,7 +23,8 @@ Spec: `docs/superpowers/specs/2026-09-24-transcriber-design.md` (binding). Plan:
 - Prompt tokens: `tokenizer.encode(text: " " + prompt).filter { $0 < specialTokens.specialTokenBegin }` with `usePrefillPrompt = true`.
 - Glossary corrections use `(?<![\p{L}\p{N}])…(?![\p{L}\p{N}])` lookarounds, not `\b` (fails on `v.o.`).
 - `@Observable` classes are `@MainActor`; progress callbacks hop with `Task { @MainActor in … }`.
-- Memory: never run the text decoder on `.cpuAndGPU` - CoreML's GPU path leaks ~0.35 MB per decoder step on macOS 26 (93-min lecture hit 31 GB and killed WindowServer). Decoders stay on `.cpuAndNeuralEngine`; the engine also stops a job above half of RAM. Measure with `footprint -p PID`, not `ps` RSS (leaked pages get compressed, RSS stays flat). Test any engine change on a full-length lecture under a cap-and-kill monitor.
+- Memory: never run the text decoder on `.cpuAndGPU` - CoreML's GPU path leaks ~0.35 MB per decoder step on macOS 26 (93-min lecture hit 31 GB and killed WindowServer). Decoders stay on `.cpuAndNeuralEngine`; the engine stops decoding and fails the job with a Spanish error when the process footprint passes half of physical RAM; remaining VAD chunks still get one cheap pass before the failure surfaces (same path as cancel). Measure with `footprint -p PID`, not `ps` RSS (leaked pages get compressed, RSS stays flat). Test any engine change on a full-length lecture under a cap-and-kill monitor.
+- Minimum hardware: Apple Silicon with 16 GB RAM (fixed footprint ~2.5 GB; 8 GB Macs are unsupported).
 
 ## Measured on this M5 Pro (spike 2026-09-24)
 - large-v3-turbo (Preciso): ~3.5x realtime, decoder on Neural Engine + 16 workers + glossary prompt (26.5 min for the 93-min lecture, footprint ~1.8 GB, peak 2.5 GB), 3 GB on disk. small (Rápido): ~30x, 0.5 GB.

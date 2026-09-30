@@ -1,7 +1,7 @@
 # Transcriptor
 
 Transcribe clases grabadas (en español) a texto legible con marcas de tiempo, sin internet y sin costo.
-Funciona en Macs con chip Apple (M1 o posterior) y macOS 14 o más nuevo.
+Funciona en Macs con chip Apple (M1 o posterior), 16 GB de RAM o más, y macOS 14 o más nuevo.
 
 ## Instalar
 
@@ -16,7 +16,7 @@ Funciona en Macs con chip Apple (M1 o posterior) y macOS 14 o más nuevo.
 
 - Arrastra los audios a la ventana o usa **Agregar audios** (⌘O). Puedes agregar varios; se procesan uno por uno.
 - Formatos aceptados: m4a, mp3, wav, aac, aiff, caf, flac, mp4, mov. Las notas de voz `.opus` de WhatsApp en Android no funcionan; conviértelas primero.
-- Una clase de 90 minutos tarda unos 11 minutos en modo **Preciso** o unos 3 en modo **Rápido** (Ajustes).
+- Una clase de 90 minutos tarda unos 26 minutos en modo **Preciso** o unos 3 en modo **Rápido** (Ajustes).
 - Las transcripciones se guardan solas en `Documentos/Transcripciones` como `.md`. **Exportar** guarda una copia en `.md` o `.txt` donde quieras.
 - **Buscar** (arriba a la derecha) resalta palabras dentro de la transcripción.
 

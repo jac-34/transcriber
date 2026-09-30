@@ -75,10 +75,12 @@ Working name: **Transcriptor**. All user-facing text is in Spanish.
   31 GB and took down the GUI session. On the Neural Engine the footprint stays
   flat at ~1.8 GB (peak 2.5 GB during audio loading). First load of a model
   after download spends ~2 minutes compiling for the Neural Engine, once per
-  model.
+  model. The engine stops decoding and fails the job with a Spanish error when
+  the process footprint passes half of physical RAM; remaining VAD chunks still
+  get one cheap pass before the failure surfaces (same path as cancel).
 - **Language forced to `es`.** No language detection. Chilean Spanish needs no
   separate model; the glossary handles vocabulary.
-- **Minimum macOS 14.** Swift 6 language mode, strict concurrency.
+- **Minimum macOS 14.** Swift 6 language mode, strict concurrency. Minimum hardware: Apple Silicon Mac with 16 GB RAM.
 
 ## 4. Architecture
 
