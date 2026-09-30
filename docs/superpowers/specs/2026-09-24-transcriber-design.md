@@ -68,8 +68,15 @@ Working name: **Transcriptor**. All user-facing text is in Spanish.
 
   Both models run the audio encoder and the text decoder on
   `cpuAndNeuralEngine`, `chunkingStrategy = .vad`,
-  `firstTokenLogProbThreshold = nil`; Preciso uses `concurrentWorkerCount = 16`
-  (24 was no faster). The spike's faster Preciso setting (decoder on
+  `firstTokenLogProbThreshold = nil`; Preciso uses `concurrentWorkerCount = 2`,
+  Rápido 4. Inside the GUI app the Neural Engine times out CoreML predictions
+  when Preciso runs 6 or more windows at once (19-26 of 42 chunks lost on a
+  15-minute slice with 6, 8 or 16 workers); WhisperKit drops failed chunks
+  silently. 2 and 4 workers lose none and decode at the same speed, so 2 keeps
+  a margin. After decoding, the engine checks which seconds of the file were
+  decoded, re-decodes any gap of 2 s or more one clip at a time (one worker, no
+  VAD chunking, up to two passes) and fails the job with a Spanish error if
+  less than 90% of the audio is covered. The spike's faster Preciso setting (decoder on
   `cpuAndGPU`, 8.2x on a 5-minute clip) is ruled out: CoreML's GPU path leaks
   ~0.35 MB per decoder step on macOS 26, and a 93-minute lecture reached
   31 GB and took down the GUI session. On the Neural Engine the footprint stays

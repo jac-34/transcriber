@@ -27,6 +27,7 @@ Spec: `docs/superpowers/specs/2026-09-24-transcriber-design.md` (binding). Plan:
 - Minimum hardware: Apple Silicon with 16 GB RAM (fixed footprint ~2.5 GB; 8 GB Macs are unsupported).
 
 ## Measured on this M5 Pro (spike 2026-09-24)
-- large-v3-turbo (Preciso): ~3.5x realtime, decoder on Neural Engine + 16 workers + glossary prompt (26.5 min for the 93-min lecture, footprint ~1.8 GB, peak 2.5 GB), 3 GB on disk. small (Rápido): ~30x, 0.5 GB.
+- large-v3-turbo (Preciso): ~3.5x realtime, decoder on Neural Engine + glossary prompt (26.5 min for the 93-min lecture headless with 16 workers, footprint ~1.8 GB, peak 2.5 GB), 3 GB on disk. small (Rápido): ~30x, 0.5 GB.
+- Neural Engine worker limit: inside the GUI app, turbo with 6+ `concurrentWorkerCount` makes CoreML time out ANE predictions and WhisperKit silently drops those VAD chunks (half a lecture lost at 16). Preciso uses 2 (as fast as 4). The engine re-decodes coverage gaps (`CoverageGaps`) and fails the job below 90% coverage; measure worker changes in the app (`open -a dist/Transcriptor.app <file>`), the CLI and headless runs do not reproduce the timeouts.
 - `firstTokenLogProbThreshold` must stay `nil`: WhisperKit's default -1.5 makes VAD chunks fall back to high temperatures and come back empty (10-25% of speech lost, 2x decode work).
 - First load after download compiles the model for the Neural Engine (~2 min, once).
