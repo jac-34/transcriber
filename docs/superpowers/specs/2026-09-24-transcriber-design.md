@@ -64,7 +64,7 @@ Working name: **Transcriptor**. All user-facing text is in Spanish.
   | Setting | Model | Disk | Speed vs realtime | 90-min lecture |
   |---|---|---|---|---|
   | Preciso (default) | `openai_whisper-large-v3_turbo` | ~3.0 GB | ~3.5x | ~26 min |
-  | Rápido | `openai_whisper-small` | ~0.5 GB | ~30x | ~3 min |
+  | Rápido | `openai_whisper-small` | ~0.5 GB | ~9x | ~10 min |
 
   Both models run the audio encoder and the text decoder on
   `cpuAndNeuralEngine`, `chunkingStrategy = .vad`,
@@ -76,7 +76,10 @@ Working name: **Transcriptor**. All user-facing text is in Spanish.
   a margin. After decoding, the engine checks which seconds of the file were
   decoded, re-decodes any gap of 2 s or more one clip at a time (one worker, no
   VAD chunking, up to two passes) and fails the job with a Spanish error if
-  less than 90% of the audio is covered. The spike's faster Preciso setting (decoder on
+  less than 90% of the audio is covered. The 8–10x in-app Rápido speed is
+  measured with the glossary prompt on the Neural Engine inside the GUI app;
+  the faster 30x figure came from the 2026-09-24 CLI spike on a synthetic clip
+  without a prompt. The spike's faster Preciso setting (decoder on
   `cpuAndGPU`, 8.2x on a 5-minute clip) is ruled out: CoreML's GPU path leaks
   ~0.35 MB per decoder step on macOS 26, and a 93-minute lecture reached
   31 GB and took down the GUI session. On the Neural Engine the footprint stays
