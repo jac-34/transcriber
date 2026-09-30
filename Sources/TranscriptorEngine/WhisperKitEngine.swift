@@ -101,6 +101,9 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         options.compressionRatioThreshold = 2.4
         options.logProbThreshold = -1.0
         options.noSpeechThreshold = 0.6
+        // No first-token fallback (whisperkit-cli's setting). WhisperKit's default of -1.5 sends VAD chunks
+        // that start mid-sentence to high-temperature retries, which come back empty or hallucinated.
+        options.firstTokenLogProbThreshold = nil
         if let prompt, let tokenizer = whisperKit.tokenizer {
             let trimmed = prompt.trimmingCharacters(in: .whitespaces)
             options.promptTokens = tokenizer.encode(text: " " + trimmed)
