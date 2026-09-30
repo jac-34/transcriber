@@ -117,22 +117,24 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         // Set once the process footprint passes `memoryLimit`; stops decoding the same way cancel() does.
         let memoryExceeded = OSAllocatedUnfairLock(initialState: false)
         let memoryLimit = Self.memoryLimitBytes
-        let results: [TranscriptionResult]
-        do {
-            results = try await whisperKit.transcribe(audioPath: fileURL.path, decodeOptions: options) { _ in
-                let value = min(0.99, overall.fractionCompleted)
-                let shouldReport = lastReported.withLock { last in
-                    guard last < 0 || value >= last + 0.005 else { return false }
-                    last = value
-                    return true
-                }
-                if shouldReport { progress(value) }
-                let overLimit = memoryExceeded.withLock { exceeded in
-                    if !exceeded, let footprint = Self.physicalFootprintBytes(), footprint > memoryLimit { exceeded = true }
-                    return exceeded
-                }
-                return overLimit || cancelFlag.withLock { $0 } ? false : nil
+        let callback: TranscriptionCallback = { _ in
+            let value = min(0.99, overall.fractionCompleted)
+            let shouldReport = lastReported.withLock { last in
+                guard last < 0 || value >= last + 0.005 else { return false }
+                last = value
+                return true
             }
+            if shouldReport { progress(value) }
+            let overLimit = memoryExceeded.withLock { exceeded in
+                if !exceeded, let footprint = Self.physicalFootprintBytes(), footprint > memoryLimit { exceeded = true }
+                return exceeded
+            }
+            return overLimit || cancelFlag.withLock { $0 } ? false : nil
+        }
+        let started = Date()
+        var results: [TranscriptionResult]
+        do {
+            results = try await whisperKit.transcribe(audioPath: fileURL.path, decodeOptions: options, callback: callback)
         } catch {
             if cancelFlag.withLock({ $0 }) { throw TranscriptionError.cancelled }
             if memoryExceeded.withLock({ $0 }) { throw Self.memoryLimitError(fileURL) }
@@ -141,6 +143,26 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         }
         if cancelFlag.withLock({ $0 }) { throw TranscriptionError.cancelled }
         if memoryExceeded.withLock({ $0 }) { throw Self.memoryLimitError(fileURL) }
+
+        // WhisperKit drops VAD chunks whose decode fails (e.g. a Neural Engine timeout) and returns the rest.
+        // Find the holes, decode them again one clip at a time, and refuse to save a transcript with holes.
+        var covered = results.map(Self.decodedRange)
+        let missing = CoverageGaps.uncovered(ranges: covered, duration: duration)
+        if !missing.isEmpty {
+            let (recovered, ranges) = try await recover(
+                missing, of: fileURL, duration: duration, whisperKit: whisperKit, options: options, callback: callback,
+                stopReason: { cancelFlag.withLock { $0 } ? .cancelled : memoryExceeded.withLock { $0 } ? Self.memoryLimitError(fileURL) : nil }
+            )
+            results += recovered
+            covered += ranges
+        }
+        let fraction = CoverageGaps.coverageFraction(ranges: covered, duration: duration)
+        let elapsed = Date().timeIntervalSince(started)
+        EngineLog.logger.info("Transcripción de \(fileURL.lastPathComponent, privacy: .public): \(duration, format: .fixed(precision: 0)) s de audio en \(elapsed, format: .fixed(precision: 0)) s, cobertura \(fraction * 100, format: .fixed(precision: 1))%")
+        guard CoverageGaps.isComplete(fraction: fraction) else {
+            EngineLog.logger.error("Transcripción de \(fileURL.lastPathComponent, privacy: .public) incompleta: cobertura \(fraction * 100, format: .fixed(precision: 1))%")
+            throw TranscriptionError.engineFailure(CoverageGaps.incompleteDetail(fraction: fraction))
+        }
 
         let segments = results
             .flatMap(\.segments)
@@ -172,6 +194,70 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
     }
 
     // MARK: Helpers
+
+    /// The file-relative seconds a WhisperKit result decoded: its VAD chunk, or the whole file when unchunked.
+    private static func decodedRange(_ result: TranscriptionResult) -> ClosedRange<Double> {
+        let start = Double(result.seekTime ?? 0)
+        return start...(start + max(0, result.timings.inputAudioSeconds))
+    }
+
+    /// Decodes `gaps` again, one clip per call, sequentially and without VAD chunking, for up to two passes.
+    /// Returns the new results and the ranges that decoded. A gap whose retry fails stays uncovered;
+    /// `stopReason` (cancel or memory limit) aborts the recovery with that error.
+    private func recover(
+        _ gaps: [ClosedRange<Double>],
+        of fileURL: URL,
+        duration: TimeInterval,
+        whisperKit: WhisperKit,
+        options: DecodingOptions,
+        callback: @escaping TranscriptionCallback,
+        stopReason: () -> TranscriptionError?
+    ) async throws -> (results: [TranscriptionResult], ranges: [ClosedRange<Double>]) {
+        let name = fileURL.lastPathComponent
+        let missingSeconds = gaps.reduce(0) { $0 + ($1.upperBound - $1.lowerBound) }
+        EngineLog.logger.error("Transcripción de \(name, privacy: .public): \(missingSeconds, format: .fixed(precision: 1)) s sin transcribir en \(gaps.count) tramos; se reintentan")
+
+        let audio: [Float]
+        do {
+            audio = try AudioProcessor.loadAudioAsFloatArray(fromPath: fileURL.path, channelMode: whisperKit.audioInputOptions.channelMode)
+        } catch {
+            EngineLog.error("Recarga de \(name) para reintentar tramos falló", error)
+            return ([], [])
+        }
+        let audioEnd = Double(audio.count) / Double(WhisperKit.sampleRate)
+
+        var clipOptions = options
+        clipOptions.chunkingStrategy = ChunkingStrategy.none
+        clipOptions.concurrentWorkerCount = 1
+
+        var results: [TranscriptionResult] = []
+        var ranges: [ClosedRange<Double>] = []
+        var pending = gaps
+        for pass in 1...2 where !pending.isEmpty {
+            var failed: [ClosedRange<Double>] = []
+            for gap in pending {
+                if let reason = stopReason() { throw reason }
+                let end = min(gap.upperBound, audioEnd)
+                guard end > gap.lowerBound else { continue }
+                clipOptions.clipTimestamps = [Float(gap.lowerBound), Float(end)]
+                do {
+                    results += try await whisperKit.transcribe(audioArray: audio, decodeOptions: clipOptions, callback: callback)
+                    if let reason = stopReason() { throw reason }
+                    ranges.append(gap.lowerBound...end)
+                } catch let error as TranscriptionError {
+                    throw error
+                } catch {
+                    if let reason = stopReason() { throw reason }
+                    EngineLog.error("Reintento \(pass) del tramo \(Int(gap.lowerBound))–\(Int(end)) s de \(name) falló", error)
+                    failed.append(gap)
+                }
+            }
+            pending = failed
+        }
+        let recoveredSeconds = CoverageGaps.coveredSeconds(ranges: ranges, duration: duration)
+        EngineLog.logger.info("Transcripción de \(name, privacy: .public): \(recoveredSeconds, format: .fixed(precision: 1)) de \(missingSeconds, format: .fixed(precision: 1)) s recuperados; \(pending.count) tramos siguen sin transcribir")
+        return (results, ranges)
+    }
 
     private func load(_ model: ModelChoice, from folder: URL) async throws -> WhisperKit {
         let config = WhisperKitConfig(
