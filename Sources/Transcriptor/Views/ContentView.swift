@@ -1,6 +1,9 @@
 import SwiftUI
 import TranscriptorCore
 
+/// Shows the sidebar and the selected transcript or job's status, plus a toolbar for adding
+/// files, exporting, re-applying the glossary, revealing the library folder, and opening the
+/// settings and glossary sheets. Forwards dropped files and alert dismissal to `AppState`.
 struct ContentView: View {
     @Environment(AppState.self) private var state
 

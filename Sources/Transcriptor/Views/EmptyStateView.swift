@@ -1,8 +1,12 @@
 import SwiftUI
 
+/// Shows a placeholder icon, title and optional message when no transcript or job is selected.
 struct EmptyStateView: View {
+    /// SF Symbol name shown above the title.
     let systemImage: String
+    /// Headline text.
     let title: String
+    /// Secondary text shown below the title; hidden when empty.
     let message: String
 
     var body: some View {

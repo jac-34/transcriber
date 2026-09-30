@@ -1,7 +1,10 @@
 import SwiftUI
 import TranscriptorCore
 
+/// Shows a transcript's paragraphs with timestamps, and lets the user search the text with
+/// matches highlighted.
 struct TranscriptDetailView: View {
+    /// Holds the transcript to display.
     let transcript: Transcript
     @State private var query = ""
 
@@ -35,6 +38,9 @@ struct TranscriptDetailView: View {
         .searchable(text: $query, placement: .toolbar, prompt: "Buscar en la transcripción")
     }
 
+    /// Returns `text` as attributed text with every case- and diacritic-insensitive match of
+    /// `query` highlighted in yellow. Returns `text` unchanged when `query` has fewer than 2
+    /// non-whitespace characters.
     private func highlighted(_ text: String) -> AttributedString {
         var attributed = AttributedString(text)
         let needle = query.trimmingCharacters(in: .whitespaces)

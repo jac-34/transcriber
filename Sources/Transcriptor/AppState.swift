@@ -3,29 +3,49 @@ import Observation
 import TranscriptorCore
 import TranscriptorEngine
 
+/// Identifies what the sidebar has selected.
 enum SidebarItem: Hashable {
+    /// Selects the queued or running job with this id.
     case job(UUID)
+    /// Selects the saved transcript with this id.
     case transcript(UUID)
 }
 
+/// The app's observable state: wires Core's `JobQueue` to the transcription engine and settings,
+/// and holds everything the views read and bind to. `TranscriptorApp` creates one instance and
+/// injects it into the view hierarchy via `environment(_:)`.
 @MainActor @Observable
 final class AppState {
+    /// User preferences: model choice and library folder.
     let settings: Settings
+    /// Downloads and tracks which WhisperKit models are available locally.
     let modelManager: ModelManager
+    /// Wraps WhisperKit for model preparation and transcription.
     let engine: WhisperKitEngine
+    /// The folder where finished transcripts and the glossary are stored.
     private(set) var library: Library
+    /// Processes queued audio files one at a time and reports their progress.
     let queue: JobQueue
 
+    /// Transcripts currently listed in the sidebar, refreshed from `library`.
     var transcripts: [Transcript] = []
+    /// The sidebar's current selection, if any.
     var selection: SidebarItem?
     /// One-line Spanish message shown in an alert, then cleared.
     var pendingAlert: String?
+    /// True when the selected model must be downloaded before it can be used.
     var needsModelDownload = false
+    /// Progress of the current model download, or nil when none is running.
     var downloadProgress: Double?
+    /// Spanish error message from the last failed model download, or nil.
     var downloadError: String?
+    /// Controls whether the settings sheet is presented.
     var showSettings = false
+    /// Controls whether the glossary sheet is presented.
     var showGlossary = false
 
+    /// Creates settings, the model manager, the engine and the library, falling back to the
+    /// default library folder and showing `pendingAlert` if the saved folder is unavailable.
     init() {
         let settings = Settings()
         let modelManager = ModelManager()
@@ -69,10 +89,13 @@ final class AppState {
         AppLog.info("Inicio. Modelo: \(settings.modelChoice.rawValue). Carpeta: \(library.folder.path)")
     }
 
+    /// Reloads `transcripts` from `library`.
     func refreshLibrary() {
         transcripts = library.list()
     }
 
+    /// Queues `urls` for transcription, selects the newest job if nothing is selected, and
+    /// surfaces any rejected files as `pendingAlert`.
     func addFiles(_ urls: [URL]) {
         let rejections = queue.add(urls)
         if let newest = queue.jobs.last(where: { !$0.isFinished }), selection == nil {
@@ -84,10 +107,13 @@ final class AppState {
         }
     }
 
+    /// Opens a file picker for audio files and queues the ones chosen.
     func openFilesPanel() {
         addFiles(FilePanels.chooseAudioFiles())
     }
 
+    /// Returns the transcript for a sidebar selection: a saved transcript directly, or a finished
+    /// job's transcript. Returns nil for a job with no transcript yet, or for a nil selection.
     func transcript(for item: SidebarItem?) -> Transcript? {
         switch item {
         case .transcript(let id):
@@ -128,6 +154,8 @@ final class AppState {
         needsModelDownload = !modelManager.isDownloaded(settings.modelChoice) && !hasActiveJobs
     }
 
+    /// Lets the user pick a destination and writes `transcript` there in `format`; does nothing
+    /// if the panel is cancelled, and sets `pendingAlert` if the write fails.
     func export(_ transcript: Transcript, as format: ExportFormat) {
         guard let destination = FilePanels.chooseExportDestination(suggestedName: Library.sanitizedStem(transcript.title), format: format) else { return }
         let content = format == .markdown ? transcript.renderMarkdown() : transcript.renderPlainText()
@@ -139,11 +167,14 @@ final class AppState {
         }
     }
 
+    /// Creates the library folder if needed and reveals it in Finder.
     func revealLibraryFolder() {
         try? library.ensureExists()
         FilePanels.reveal(library.folder)
     }
 
+    /// Re-runs the current glossary's corrections on `transcript`, saves the result, refreshes
+    /// the transcript list, and selects the updated transcript. Sets `pendingAlert` on failure.
     func reapplyGlossary(to transcript: Transcript) {
         let glossary = Glossary(text: library.loadGlossaryText())
         let updated = TranscriptPipeline.reapply(glossary: glossary, to: transcript)
@@ -156,6 +187,8 @@ final class AppState {
         }
     }
 
+    /// Switches the library to `url`, copying an existing glossary file across if the new folder
+    /// has none, then refreshes the transcript list.
     func changeLibraryFolder(_ url: URL) {
         let old = library
         let new = Library(folder: url)
@@ -178,8 +211,10 @@ final class AppState {
         AppLog.info("Carpeta cambiada: \(url.path)")
     }
 
+    /// Returns the current glossary file's text, or the template text if none has been saved yet.
     func loadGlossaryText() -> String { library.loadGlossaryText() }
 
+    /// Saves `text` as the glossary file. Sets `pendingAlert` if the write fails.
     func saveGlossaryText(_ text: String) {
         do {
             try library.saveGlossaryText(text)

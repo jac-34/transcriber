@@ -1,6 +1,9 @@
 import SwiftUI
 import TranscriptorCore
 
+/// Presents the glossary editor as a sheet. Shows live term/correction counts and parse errors,
+/// and forwards saving and, optionally, re-applying the glossary to `currentTranscript` to
+/// `AppState`.
 struct GlossarySheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss

@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// URLs that arrived before AppState existed; flushed when `state` is set.
     private var pendingURLs: [URL] = []
 
+    /// The app's shared state. Setting it delivers any files that arrived before it existed.
     var state: AppState? {
         didSet {
             guard let state, !pendingURLs.isEmpty else { return }
@@ -14,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Forwards Finder-opened files to `state`, or queues them if `state` is not set yet.
     func application(_ application: NSApplication, open urls: [URL]) {
         if let state {
             state.addFiles(urls)

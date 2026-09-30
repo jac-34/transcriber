@@ -1,7 +1,8 @@
 import SwiftUI
 import TranscriptorCore
 
-/// Shown as a sheet when the selected model is not on disk yet.
+/// Shown as a sheet when the selected model is not on disk yet. Shows download progress and, on
+/// failure, forwards the retry action to `AppState`.
 struct ModelDownloadView: View {
     @Environment(AppState.self) private var state
 

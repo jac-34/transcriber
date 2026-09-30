@@ -1,7 +1,9 @@
 import SwiftUI
 import TranscriptorCore
 
+/// Shows a queued or running job's filename and progress, or its error message if it failed.
 struct JobRowView: View {
+    /// Holds the job to display.
     let job: Job
 
     var body: some View {

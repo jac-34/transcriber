@@ -1,6 +1,8 @@
 import SwiftUI
 import TranscriptorCore
 
+/// Lets the user change the model choice and the library folder, forwarding both changes to
+/// `AppState`.
 struct SettingsSheet: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss

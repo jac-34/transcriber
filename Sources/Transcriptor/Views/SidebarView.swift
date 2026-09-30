@@ -1,8 +1,10 @@
 import SwiftUI
 import TranscriptorCore
 
+/// Lists active jobs and saved transcripts, and forwards the user's choice through `selection`.
 struct SidebarView: View {
     @Environment(AppState.self) private var state
+    /// The sidebar's selection, bound to the parent view.
     @Binding var selection: SidebarItem?
 
     /// Jobs worth showing: anything unfinished, plus failures the user has not cleared.
