@@ -25,15 +25,15 @@ public enum ModelChoice: String, CaseIterable, Codable, Sendable, Identifiable {
     /// Size and speed hint shown next to the picker.
     public var detailText: String {
         switch self {
-        case .preciso: "Whisper large-v3-turbo · descarga de ~3 GB · unos 11 min por clase de 90 min"
+        case .preciso: "Whisper large-v3-turbo · descarga de ~3 GB · unos 26 min por clase de 90 min"
         case .rapido: "Whisper small · descarga de ~0,5 GB · unos 3 min por clase de 90 min"
         }
     }
 
-    /// Parallel decoding windows. Measured best value on an M5 for the turbo model.
+    /// Parallel decoding windows. Measured best value on an M5 for the turbo model (decoder on the Neural Engine).
     public var concurrentWorkers: Int {
         switch self {
-        case .preciso: 8
+        case .preciso: 16
         case .rapido: 4
         }
     }

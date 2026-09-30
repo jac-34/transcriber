@@ -23,7 +23,9 @@ Spec: `docs/superpowers/specs/2026-09-24-transcriber-design.md` (binding). Plan:
 - Prompt tokens: `tokenizer.encode(text: " " + prompt).filter { $0 < specialTokens.specialTokenBegin }` with `usePrefillPrompt = true`.
 - Glossary corrections use `(?<![\p{L}\p{N}])…(?![\p{L}\p{N}])` lookarounds, not `\b` (fails on `v.o.`).
 - `@Observable` classes are `@MainActor`; progress callbacks hop with `Task { @MainActor in … }`.
+- Memory: never run the text decoder on `.cpuAndGPU` - CoreML's GPU path leaks ~0.35 MB per decoder step on macOS 26 (93-min lecture hit 31 GB and killed WindowServer). Decoders stay on `.cpuAndNeuralEngine`; the engine also stops a job above half of RAM. Measure with `footprint -p PID`, not `ps` RSS (leaked pages get compressed, RSS stays flat). Test any engine change on a full-length lecture under a cap-and-kill monitor.
 
 ## Measured on this M5 Pro (spike 2026-09-24)
-- large-v3-turbo (Preciso): ~8x realtime with decoder on GPU + 8 workers (~11 min per 90-min lecture), 3 GB on disk. small (Rápido): ~30x, 0.5 GB.
+- large-v3-turbo (Preciso): ~3.5x realtime, decoder on Neural Engine + 16 workers + glossary prompt (26.5 min for the 93-min lecture, footprint ~1.8 GB, peak 2.5 GB), 3 GB on disk. small (Rápido): ~30x, 0.5 GB.
+- `firstTokenLogProbThreshold` must stay `nil`: WhisperKit's default -1.5 makes VAD chunks fall back to high temperatures and come back empty (10-25% of speech lost, 2x decode work).
 - First load after download compiles the model for the Neural Engine (~2 min, once).

@@ -114,6 +114,9 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         let overall = whisperKit.progress
         // Last value passed to `progress`; -1 means nothing reported yet. Skips steps under half a percent.
         let lastReported = OSAllocatedUnfairLock<Double>(initialState: -1)
+        // Set once the process footprint passes `memoryLimit`; stops decoding the same way cancel() does.
+        let memoryExceeded = OSAllocatedUnfairLock(initialState: false)
+        let memoryLimit = Self.memoryLimitBytes
         let results: [TranscriptionResult]
         do {
             results = try await whisperKit.transcribe(audioPath: fileURL.path, decodeOptions: options) { _ in
@@ -124,14 +127,20 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
                     return true
                 }
                 if shouldReport { progress(value) }
-                return cancelFlag.withLock { $0 } ? false : nil
+                let overLimit = memoryExceeded.withLock { exceeded in
+                    if !exceeded, let footprint = Self.physicalFootprintBytes(), footprint > memoryLimit { exceeded = true }
+                    return exceeded
+                }
+                return overLimit || cancelFlag.withLock { $0 } ? false : nil
             }
         } catch {
             if cancelFlag.withLock({ $0 }) { throw TranscriptionError.cancelled }
+            if memoryExceeded.withLock({ $0 }) { throw Self.memoryLimitError(fileURL) }
             EngineLog.error("Transcripción de \(fileURL.lastPathComponent) falló", error)
             throw TranscriptionError.engineFailure(userFacingDetail(error))
         }
         if cancelFlag.withLock({ $0 }) { throw TranscriptionError.cancelled }
+        if memoryExceeded.withLock({ $0 }) { throw Self.memoryLimitError(fileURL) }
 
         let segments = results
             .flatMap(\.segments)
@@ -180,13 +189,32 @@ public final class WhisperKitEngine: TranscriptionEngine, @unchecked Sendable {
         return try await WhisperKit(config)
     }
 
+    /// Encoder and decoder both on the Neural Engine. The text decoder must not run on the GPU: on macOS 26
+    /// CoreML's GPU path leaks ~0.35 MB per decoder step (MPSTemporaryNDArray/AGX buffers, not autoreleased
+    /// objects), which grew a 93-minute lecture past 30 GB. On the Neural Engine the footprint stays flat.
     private func computeOptions(for model: ModelChoice) -> ModelComputeOptions {
-        switch model {
-        case .preciso:
-            ModelComputeOptions(audioEncoderCompute: .cpuAndNeuralEngine, textDecoderCompute: .cpuAndGPU)
-        case .rapido:
-            ModelComputeOptions(audioEncoderCompute: .cpuAndNeuralEngine, textDecoderCompute: .cpuAndNeuralEngine)
+        ModelComputeOptions(audioEncoderCompute: .cpuAndNeuralEngine, textDecoderCompute: .cpuAndNeuralEngine)
+    }
+
+    /// Footprint above which a transcription is stopped: half of physical memory. A full lecture peaks at ~2.5 GB.
+    static var memoryLimitBytes: UInt64 { ProcessInfo.processInfo.physicalMemory / 2 }
+
+    /// This process's physical footprint (the figure Jetsam acts on), or nil if the kernel call fails.
+    static func physicalFootprintBytes() -> UInt64? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
         }
+        return result == KERN_SUCCESS ? info.phys_footprint : nil
+    }
+
+    private static func memoryLimitError(_ fileURL: URL) -> TranscriptionError {
+        let limitGB = Double(memoryLimitBytes) / 1_073_741_824
+        EngineLog.logger.error("Transcripción de \(fileURL.lastPathComponent, privacy: .public) detenida: memoria sobre \(limitGB, format: .fixed(precision: 1)) GB")
+        return .engineFailure("se detuvo porque usaba demasiada memoria")
     }
 
     private func audioDuration(of url: URL) async throws -> TimeInterval {

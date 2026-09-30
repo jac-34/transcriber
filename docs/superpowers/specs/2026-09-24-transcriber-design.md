@@ -57,19 +57,25 @@ Working name: **Transcriptor**. All user-facing text is in Spanish.
   SpeechTranscriber because it is native Swift, fastest on Apple Silicon, and
   accepts a vocabulary prompt. Models download from the `argmaxinc/whisperkit-coreml`
   Hugging Face repo.
-- **Model settings**, measured in the spike on this M5 Pro (5-minute Spanish
-  clip, VAD chunking):
+- **Model settings**, measured on this M5 Pro (Preciso: full 93-minute
+  lecture with the glossary prompt, 2026-09-29; Rápido: spike, 5-minute
+  Spanish clip, VAD chunking):
 
   | Setting | Model | Disk | Speed vs realtime | 90-min lecture |
   |---|---|---|---|---|
-  | Preciso (default) | `openai_whisper-large-v3_turbo` | ~3.0 GB | ~8x | ~11 min |
+  | Preciso (default) | `openai_whisper-large-v3_turbo` | ~3.0 GB | ~3.5x | ~26 min |
   | Rápido | `openai_whisper-small` | ~0.5 GB | ~30x | ~3 min |
 
-  Preciso uses audio encoder on `cpuAndNeuralEngine`, text decoder on
-  `cpuAndGPU`, `concurrentWorkerCount = 8`, `chunkingStrategy = .vad`. That
-  combination measured 8.2x; the defaults measured 5.2x. First load of a
-  model after download spends ~2 minutes compiling for the Neural Engine,
-  once per model.
+  Both models run the audio encoder and the text decoder on
+  `cpuAndNeuralEngine`, `chunkingStrategy = .vad`,
+  `firstTokenLogProbThreshold = nil`; Preciso uses `concurrentWorkerCount = 16`
+  (24 was no faster). The spike's faster Preciso setting (decoder on
+  `cpuAndGPU`, 8.2x on a 5-minute clip) is ruled out: CoreML's GPU path leaks
+  ~0.35 MB per decoder step on macOS 26, and a 93-minute lecture reached
+  31 GB and took down the GUI session. On the Neural Engine the footprint stays
+  flat at ~1.8 GB (peak 2.5 GB during audio loading). First load of a model
+  after download spends ~2 minutes compiling for the Neural Engine, once per
+  model.
 - **Language forced to `es`.** No language detection. Chilean Spanish needs no
   separate model; the glossary handles vocabulary.
 - **Minimum macOS 14.** Swift 6 language mode, strict concurrency.
